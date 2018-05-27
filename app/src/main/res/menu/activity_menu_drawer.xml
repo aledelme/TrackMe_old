@@ -5,33 +5,29 @@
 
     <group android:checkableBehavior="single">
         <item
-            android:id="@+id/nav_camera"
-            android:icon="@drawable/ic_menu_camera"
-            android:title="Import" />
+            android:id="@+id/nav_routes"
+            android:icon="@drawable/ic_vector_polyline"
+            android:title="Mis rutas" />
         <item
-            android:id="@+id/nav_gallery"
-            android:icon="@drawable/ic_menu_gallery"
-            android:title="Gallery" />
+            android:id="@+id/nav_settings"
+            android:icon="@drawable/ic_settings"
+            android:title="Configuración" />
         <item
-            android:id="@+id/nav_slideshow"
-            android:icon="@drawable/ic_menu_slideshow"
-            android:title="Slideshow" />
-        <item
-            android:id="@+id/nav_manage"
-            android:icon="@drawable/ic_menu_manage"
-            android:title="Tools" />
+            android:id="@+id/nav_notifications"
+            android:icon="@drawable/ic_bell_ring_outline"
+            android:title="Notificaciones" />
     </group>
 
-    <item android:title="Communicate">
+    <item android:title="Acciones">
         <menu>
             <item
-                android:id="@+id/nav_share"
-                android:icon="@drawable/ic_menu_share"
-                android:title="Share" />
+                android:id="@+id/nav_heat_map"
+                android:icon="@drawable/ic_fire"
+                android:title="Mapa de calor" />
             <item
-                android:id="@+id/nav_send"
-                android:icon="@drawable/ic_menu_send"
-                android:title="Send" />
+                android:id="@+id/nav_clear"
+                android:icon="@drawable/ic_broom"
+                android:title="Limpiar mapa" />
         </menu>
     </item>
 

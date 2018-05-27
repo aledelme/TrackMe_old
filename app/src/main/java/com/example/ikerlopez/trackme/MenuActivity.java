@@ -3,10 +3,13 @@ package com.example.ikerlopez.trackme;
 import android.Manifest;
 import android.content.DialogInterface;
 import android.content.pm.PackageManager;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.location.Location;
 import android.os.Bundle;
 import android.os.Looper;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.support.design.widget.FloatingActionButton;
 import android.support.design.widget.Snackbar;
 import android.support.v4.app.ActivityCompat;
@@ -24,6 +27,7 @@ import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.widget.EditText;
 import android.widget.Toast;
 
 import com.google.android.gms.location.FusedLocationProviderClient;
@@ -42,7 +46,9 @@ import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.model.PolylineOptions;
+import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.android.gms.tasks.Task;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
@@ -50,6 +56,8 @@ import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 
 import java.text.DateFormat;
+import java.text.NumberFormat;
+import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.Locale;
@@ -60,6 +68,7 @@ public class MenuActivity extends AppCompatActivity
     GoogleMap mMap;
     RecyclerView recyclerView;
     RecyclerViewAdapter recyclerViewAdapter;
+    FloatingActionButton fab;
 
     private ArrayList<Ruta> rutas;
     private RutasManager rutasManager;
@@ -74,11 +83,13 @@ public class MenuActivity extends AppCompatActivity
     FirebaseDatabase database = FirebaseDatabase.getInstance();
     DatabaseReference rutasRef = database.getReference("rutas");
     DatabaseReference puntosRef = database.getReference("puntos");
+    ValueEventListener portaRutas;
 
     public static final int MY_PERMISSIONS_REQUEST_LOCATION = 99;
 
     int index = 0;
     String idruta = null;
+    boolean traking = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -90,15 +101,19 @@ public class MenuActivity extends AppCompatActivity
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
+        setTitle("TrackMe");
 
-        FloatingActionButton fab = (FloatingActionButton) findViewById(R.id.fab);
+        fab = (FloatingActionButton) findViewById(R.id.fab);
         fab.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                        .setAction("Action", null).show();
+                if(!traking)
+                    createRuta();
+                else
+                    finishRoute();
             }
         });
+
 
         DrawerLayout drawer = (DrawerLayout) findViewById(R.id.drawer_layout);
         ActionBarDrawerToggle toggle = new ActionBarDrawerToggle(
@@ -113,7 +128,6 @@ public class MenuActivity extends AppCompatActivity
         LinearLayoutManager verticalManager = new LinearLayoutManager(MenuActivity.this, LinearLayoutManager.VERTICAL, false);
         recyclerView.setLayoutManager(verticalManager);
         rutasManager = new RutasManager();
-        mockRutas();
 
         mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
         mSettingsClient = LocationServices.getSettingsClient(this);
@@ -121,6 +135,35 @@ public class MenuActivity extends AppCompatActivity
         createLocationCallback();
         createLocationRequest();
         buildLocationSettingsRequest();
+
+        portaRutas = new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot dataSnapshot) {
+                LatLng previousLocation = null;
+                LatLng nextLocation;
+                for(DataSnapshot postSnapshot: dataSnapshot.getChildren()) {
+                    UserLocation userLocation = postSnapshot.getValue(UserLocation.class);
+                    double lat = userLocation.getLatitud();
+                    double lng = userLocation.getLongitude();
+                    nextLocation = new LatLng(lat,lng);
+                    if(previousLocation == null){
+                        previousLocation = nextLocation;
+                        mMap.moveCamera(CameraUpdateFactory.newLatLng(nextLocation));
+                        setRouteMarker(previousLocation,true);
+                    }
+
+                    drawLine(previousLocation,nextLocation);
+                    previousLocation = nextLocation;
+                }
+                setRouteMarker(previousLocation,false);
+            }
+            @Override
+            public void onCancelled(DatabaseError databaseError) {
+                Toast.makeText(getApplicationContext(),"Error al traer ruta",Toast.LENGTH_SHORT).show();
+                Log.e("TRAER RUTA",databaseError.getMessage());
+            }
+        };
+
 
     }
 
@@ -159,55 +202,41 @@ public class MenuActivity extends AppCompatActivity
     @SuppressWarnings("StatementWithEmptyBody")
     @Override
     public boolean onNavigationItemSelected(MenuItem item) {
-        // Handle navigation view item clicks here.
         int id = item.getItemId();
 
-        if (id == R.id.nav_camera) {
-            startLocationUpdates();
-        } else if (id == R.id.nav_gallery) {
-
-            ValueEventListener rutas = new ValueEventListener() {
-                @Override
-                public void onDataChange(DataSnapshot dataSnapshot) {
-                    for(DataSnapshot postSnapshot: dataSnapshot.getChildren()) {
-                        UserLocation userLocation = postSnapshot.getValue(UserLocation.class);
-                        Log.d("PUNTOS", userLocation.getIdruta());
-                        //Log.d("PUNTOS", userLocation.getIndex());
-                        Log.d("PUNTOS", userLocation.getLatitud());
-                        Log.d("PUNTOS", userLocation.getLongitude());
-                        Log.d("PUNTOS", userLocation.getTime());
-                    }
-                }
-
-                @Override
-                public void onCancelled(DatabaseError databaseError) {
-
-                }
-            };
-            puntosRef.orderByChild("idruta").equalTo("-LDNgo-oMOH5I3Vs33R8").addListenerForSingleValueEvent(rutas);
-
-        } else if (id == R.id.nav_slideshow) {
+        if (id == R.id.nav_routes) {
             if (recyclerView.getVisibility() == View.VISIBLE) {
                 recyclerView.setVisibility(View.INVISIBLE);
             } else {
                 getPreviousRoutes();
             }
-            //mockRutas();
-        } else if (id == R.id.nav_manage) {
-
-        } else if (id == R.id.nav_share) {
+        } else if (id == R.id.nav_settings) {
+            Toast.makeText(this,"Pendiente de implementar",Toast.LENGTH_SHORT).show();
+        } else if (id == R.id.nav_notifications) {
+            Toast.makeText(this,"Pendiente de implementar",Toast.LENGTH_SHORT).show();
+        } else if (id == R.id.nav_heat_map) {
+            Toast.makeText(this,"Pendiente de implementar",Toast.LENGTH_SHORT).show();
+        } else if (id == R.id.nav_clear) {
             mMap.clear();
-        } else if (id == R.id.nav_send) {
-            LatLng madrid = new LatLng(40, -4);
-            LatLng madagascar = new LatLng(-20.65, 46.131);
-            mMap.addMarker(new MarkerOptions().position(madrid).title("Madrid"));
-            mMap.addMarker(new MarkerOptions().position(madagascar).title("Madagascar"));
-            drawLine(madrid,madagascar);
+            Toast.makeText(this,"Mapa limpiado",Toast.LENGTH_SHORT).show();
         }
 
         DrawerLayout drawer = (DrawerLayout) findViewById(R.id.drawer_layout);
         drawer.closeDrawer(GravityCompat.START);
         return true;
+    }
+
+    private void finishRoute(){
+        mFusedLocationClient.removeLocationUpdates(mLocationCallback)
+                .addOnCompleteListener(this, new OnCompleteListener<Void>() {
+                    @Override
+                    public void onComplete(@NonNull Task<Void> task) {
+                        Toast.makeText(getApplicationContext(),"Fin de ruta",Toast.LENGTH_SHORT).show();
+                        updateRouteButton();
+                        LatLng latLng = new LatLng(lastLocation.getLatitude(),lastLocation.getLongitude());
+                        setRouteMarker(latLng,false);
+                    }
+                });
     }
 
     private void getPreviousRoutes () {
@@ -241,12 +270,6 @@ public class MenuActivity extends AppCompatActivity
         }
         mMap.setMyLocationEnabled(true);
         mMap.getUiSettings().setCompassEnabled(true);
-
-        // Add a marker in Sydney and move the camera
-        LatLng sydney = new LatLng(-34, 151);
-        mMap.addMarker(new MarkerOptions().position(sydney).title("Marker in Sydney").icon(BitmapDescriptorFactory.defaultMarker(
-                BitmapDescriptorFactory.HUE_AZURE)));
-        mMap.moveCamera(CameraUpdateFactory.newLatLng(sydney));
     }
 
     private void checkLocationPermission() {
@@ -285,20 +308,25 @@ public class MenuActivity extends AppCompatActivity
         }
     }
 
-    private void mockRutas () {
-        /*
-            Función para mockear una serie de rutas como si las hubiera realizado el usuario y estuvieran almacenadas en Shared Preferences
-            Llamarle al menos una vez para que el
-         */
-        Ruta ruta = new Ruta("-LDNgo-oMOH5I3Vs33R8","Primera Ruta");
-        Ruta ruta2 = new Ruta("-LDQd9Xlt_M0zhGJTybv","Segunda Ruta");
-        Ruta ruta3 = new Ruta("-LDOMShrXjcO-eL-Elip","Tercera Ruta");
 
-        rutasManager.addFavorite(getApplicationContext(), ruta);
-        rutasManager.addFavorite(getApplicationContext(), ruta3);
-        rutasManager.addFavorite(getApplicationContext(), ruta2);
+    private void createRuta(){
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Nueva ruta");
 
+        final EditText input = new EditText(this);
+        input.setHint("Nombre de nueva ruta");
+        builder.setView(input);
+        builder.setPositiveButton("OK", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                String nombre = input.getText().toString();
+                startLocationUpdates(nombre);
+            }
+        });
+        builder.setNegativeButton("Cancelar", null);
+        builder.show();
     }
+
 
     private void createLocationCallback() {
         mLocationCallback = new LocationCallback() {
@@ -306,30 +334,40 @@ public class MenuActivity extends AppCompatActivity
             public void onLocationResult(LocationResult locationResult) {
                 super.onLocationResult(locationResult);
                 Location mCurrentLocation = locationResult.getLastLocation();
-                Log.d("LOCATION", String.format(Locale.ENGLISH, "%s: %f", "Latitud: ",
-                        mCurrentLocation.getLatitude()));
-                Log.d("LOCATION", String.format(Locale.ENGLISH, "%s: %f", "Longitud: ",
-                        mCurrentLocation.getLongitude()));
-                String mLastUpdateTime = DateFormat.getDateTimeInstance().format(new Date());
-                Log.d("LOCATION", String.format(Locale.ENGLISH, "%s: %s", "Date: ", mLastUpdateTime));
-
-                index++;
-                UserLocation userLocation = new UserLocation();
-                userLocation.setIdruta(idruta);
-                userLocation.setIndex(index);
-                userLocation.setLatitud(String.format(Locale.getDefault(),"%f",mCurrentLocation.getLatitude()));
-                userLocation.setLongitude(String.format(Locale.getDefault(),"%f",mCurrentLocation.getLongitude()));
-                userLocation.setTime(DateFormat.getDateTimeInstance().format(new Date()));
-                puntosRef.push().setValue(userLocation);
-
-                if(lastLocation == null)
-                    lastLocation = mCurrentLocation;
+                addLocationToFirebase(mCurrentLocation);
                 LatLng latLng1 = new LatLng(mCurrentLocation.getLatitude(),mCurrentLocation.getLongitude());
+                if(lastLocation == null) {
+                    lastLocation = mCurrentLocation;
+                    setRouteMarker(latLng1,true);
+                }
                 LatLng latLng2 = new LatLng(lastLocation.getLatitude(),lastLocation.getLongitude());
                 drawLine(latLng1,latLng2);
                 lastLocation = mCurrentLocation;
             }
         };
+    }
+
+    private void setRouteMarker(LatLng location,boolean inicio){
+        MarkerOptions marker = new MarkerOptions();
+        marker.position(location);
+        if (inicio){
+            marker.title("Inicio de ruta");
+            marker.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE));
+        } else
+            marker.title("Fin de ruta");
+        mMap.addMarker(marker);
+        mMap.moveCamera(CameraUpdateFactory.newLatLng(location));
+    }
+
+    private void addLocationToFirebase(Location location){
+        index++;
+        UserLocation userLocation = new UserLocation();
+        userLocation.setIdruta(idruta);
+        userLocation.setIndex(index);
+        userLocation.setLatitud(location.getLatitude());
+        userLocation.setLongitude(location.getLongitude());
+        userLocation.setTime(DateFormat.getDateTimeInstance().format(new Date()));
+        puntosRef.push().setValue(userLocation);
     }
 
     protected void createLocationRequest() {
@@ -345,7 +383,7 @@ public class MenuActivity extends AppCompatActivity
         mLocationSettingsRequest = builder.build();
     }
 
-    private void startLocationUpdates() {
+    private void startLocationUpdates(final String name) {
         mSettingsClient.checkLocationSettings(mLocationSettingsRequest)
                 .addOnSuccessListener(this, new OnSuccessListener<LocationSettingsResponse>() {
                     @Override
@@ -366,9 +404,12 @@ public class MenuActivity extends AppCompatActivity
                         }
                         idruta = rutasRef.push().getKey();
                         index = 0;
+                        Ruta ruta = new Ruta(idruta,name);
+                        Toast.makeText(getApplicationContext(),"Traking iniciado",Toast.LENGTH_SHORT).show();
+                        updateRouteButton();
+                        rutasManager.addFavorite(getApplicationContext(),ruta);
                         mFusedLocationClient.requestLocationUpdates(mLocationRequest,
                                 mLocationCallback, Looper.myLooper());
-
                     }
                 });
     }
@@ -391,7 +432,19 @@ public class MenuActivity extends AppCompatActivity
         // Gestionar la pulsación del recyclerview para traer de la base de datos la ruta seleccionada y pintarla sobre el mapa
 
         Toast.makeText(this, "Has seleccionado la ruta " + rutas.get(position).getNombre() , Toast.LENGTH_SHORT).show();
-
-
+        puntosRef.orderByChild("idruta").equalTo(rutas.get(position).getId()).addListenerForSingleValueEvent(portaRutas);
     }
+
+    public void updateRouteButton(){
+        if(traking) {
+            fab.setBackgroundTintList(ColorStateList.valueOf(getResources().getColor(android.R.color.holo_green_dark)));
+            fab.setImageResource(R.drawable.ic_run);
+            traking = false;
+        } else {
+            fab.setBackgroundTintList(ColorStateList.valueOf(getResources().getColor(android.R.color.holo_red_dark)));
+            fab.setImageResource(R.drawable.ic_human_male);
+            traking = true;
+        }
+    }
+
 }

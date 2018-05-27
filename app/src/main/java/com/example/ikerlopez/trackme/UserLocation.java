@@ -8,8 +8,8 @@ package com.example.ikerlopez.trackme;
 public class UserLocation {
     private String idruta;
     private int index;
-    private String latitud;
-    private String longitude;
+    private double latitud;
+    private double longitude;
     private String time;
 
     public UserLocation(){
@@ -31,19 +31,19 @@ public class UserLocation {
         this.index = index;
     }
 
-    public String getLatitud() {
+    public double getLatitud() {
         return latitud;
     }
 
-    public void setLatitud(String latitud) {
+    public void setLatitud(double latitud) {
         this.latitud = latitud;
     }
 
-    public String getLongitude() {
+    public double getLongitude() {
         return longitude;
     }
 
-    public void setLongitude(String longitude) {
+    public void setLongitude(double longitude) {
         this.longitude = longitude;
     }
 
